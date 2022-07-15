@@ -1,0 +1,333 @@
+---
+title: "The Terminating-LARS (T-LARS) Method: Usage and Simulations"
+author: |
+  | Jasin Machkour^\#^, Simon Tien^\#^, Daniel P. Palomar^\*^, Michael Muma^\#^
+  |
+  | ^\#^Technische Universität Darmstadt
+  | ^\*^The Hong Kong University of Science and Technology
+date: "`r Sys.Date()`"
+output:
+  html_document: 
+    theme: flatly
+    highlight: pygments
+    toc: yes
+    toc_depth: 1
+    toc_float: yes
+    css: vignette_styles.css
+  prettydoc::html_pretty:
+    theme: tactile
+    highlight: vignette
+    toc: yes
+    toc_depth: 2
+toc-title: "Table of Contents"    
+csl: the-annals-of-statistics.csl # https://www.zotero.org/styles
+bibliography: refs.bib
+nocite: |
+  @machkour2021terminating, @efron2004least
+vignette: |
+  %\VignetteKeyword{T-LARS, T-Rex selector, false discovery rate (FDR) control, high-dimensional variable selection, martingale theory, genome-wide association studies (GWAS)}
+  %\VignetteEncoding{UTF-8}
+  %\VignetteIndexEntry{The Terminating-LARS (T-LARS) Method: Usage and Simulations}
+  %\VignetteEngine{knitr::rmarkdown}
+---
+
+```{r, include = FALSE}
+# Store user's options()
+old_options <- options()
+
+library(knitr)
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.align = "center",
+  fig.retina = 2,
+  out.width = "85%",
+  dpi = 96
+  # pngquant = "--speed=1"
+)
+options(width = 80)
+```
+
+
+-----------
+# Motivation
+This package implements the **Terminating-LARS (T-LARS)** algorithm, i.e., it computes the solution path of the T-LARS algorithm. The T-LARS algorithm appends dummy predictors to the original predictor matrix and terminates the forward-selection process after a pre-defined number of dummy variables has been selected.
+
+In contrast, the original LARS algorithm computes the entire solution path without stopping early. However, in certain applications there exists very little or no useful information in later steps of the solution path and, therefore, stopping early allows for huge improvements in terms of computation time and no loss in the variable selection accuracy. Especially the **T-Rex selector** ([Paper](https://arxiv.org/abs/2110.06048) and [R package](https://github.com/jasinmachkour/trex)) requires terminating multiple solution paths early after a pre-defined number of dummy variables has been included.
+
+The T-LARS algorithm is a major building block of the **T-Rex selector**. The T-Rex selector performs terminated-random experiments (T-Rex) using the T-LARS algorithm and fuses the selected active sets of all random experiments to obtain a final set of selected variables. The T-Rex selector provably controls the false discovery rate (FDR), i.e., the expected fraction of selected false positives among all selected variables, at the user-defined target level while maximizing the number of selected variables.
+
+In the following, we show how to use the package and give you an idea of why terminating the solution path early is a reasonable approach in high-dimensional and sparse variable selection: In many applications, most active variables enter the solution path early!
+
+<!-- Include Latex macros -->
+$$
+\DeclareMathOperator{\FDP}{FDP}
+\DeclareMathOperator{\FDR}{FDR}
+\DeclareMathOperator{\TPP}{TPP}
+\DeclareMathOperator{\TPR}{TPR}
+\newcommand{\A}{\mathcal{A}}
+\newcommand{\coloneqq}{\mathrel{\vcenter{:}}=}
+$$
+
+# Installation
+You can install the 'tlars' package from [GitHub](https://github.com/jasinmachkour/tlars) with 
+
+``` r
+install.packages("devtools")
+devtools::install_github("jasinmachkour/tlars")
+```
+
+You can open the help pages with
+```{r, eval=FALSE}
+library(tlars)
+help(package = "tlars")
+?tlars
+?tlars_model
+?tlars_cpp
+?plot.Rcpp_tlars_cpp
+?print.Rcpp_tlars_cpp
+?Gauss_data
+```
+
+To cite the package 'tlars' in publications use
+```{r, eval=FALSE}
+citation("tlars")
+```
+
+
+# Quick Start
+In the following, we illustrate the basic usage of the 'tlars' package for performing variable selection in sparse and high-dimensional regression settings using the T-LARS algorithm:
+
+1. **First**, we generate a high-dimensional Gaussian data set with sparse support:
+```{r}
+library(tlars)
+
+# Setup
+n <- 150 # Number of observations
+p <- 300 # Number of variables
+num_act <- 5 # Number of true active variables
+beta <- c(rep(1, times = num_act), rep(0, times = p - num_act)) # Coefficient vector
+true_actives <- which(beta > 0) # Indices of true active variables
+num_dummies <- p # Number of dummy predictors (or dummies)
+
+# Generate Gaussian data
+set.seed(123)
+X <- matrix(stats::rnorm(n * p), nrow = n, ncol = p)
+y <- X %*% beta + stats::rnorm(n)
+```
+
+2. **Second**, we generate a dummy matrix containing n rows and num_dummies dummy predictors that are sampled from the standard normal distribution and append it to the original predictor matrix:
+```{r}
+set.seed(1234)
+dummies <- matrix(stats::rnorm(n * num_dummies), nrow = n, ncol = num_dummies)
+XD <- cbind(X, dummies)
+```
+
+3. **Third**, we generate an object of the C++ class 'tlars_cpp' and supply the information that the last num_dummies predictors in XD are dummy predictors:
+```{r}
+mod_tlars <- tlars_model(X = XD, y = y, num_dummies = num_dummies)
+```
+
+4. **Finally**, we perform one T-LARS step on 'mod_tlars', i.e., the T-LARS algorithm is run until **T_stop = 1** dummy has entered the solution path and stops there:
+
+```{r terminated_solution_path_T_3, echo=TRUE, fig.align='center', message=TRUE, fig.width = 10, fig.height = 6, out.width = "90%"}
+tlars(model = mod_tlars, T_stop = 1, early_stop = TRUE) # Perform one T-LARS step on object "mod_tlars"
+print(mod_tlars) # Print information about the results of the performed T-LARS steps
+plot(mod_tlars) # Plot the terminated solution path
+```
+
+
+# T-LARS Warm Starts
+The object "mod_tlars" stores the results and, therefore, allows for warm starts. That is, after performing a T-LARS step with, e.g., "T_stop = 1", we can perform another T-LARS step with, e.g., "T_stop = 2, 3, ...", by continuing to build the solution path from its last T-LARS step.
+
+******
+
+* **T_stop = 2**:
+
+```{r terminated_solution_path_T_5, echo=TRUE, fig.align='center', message=TRUE, fig.width = 10, fig.height = 6, out.width = "90%"}
+# Numerical zero
+eps <- .Machine$double.eps
+
+# Perform one additional T-LARS step (going from T_stop = 1 to T_stop = 2) on object "mod_tlars"
+tlars(model = mod_tlars, T_stop = 2, early_stop = TRUE)
+print(mod_tlars)
+plot(mod_tlars)
+
+# Coefficient vector corresponding to original and dummy variables at the terminal T-LARS step 
+beta_hat <- mod_tlars$get_beta()
+
+selected_var <- which(abs(beta_hat[seq(p)]) > eps) # Indices of selected original variables
+selected_dummies <- p + which(abs(beta_hat[seq(p + 1, ncol(XD))]) > eps) # Indices of selected dummy variables
+
+FDP <- length(setdiff(selected_var, true_actives)) / max(1, length(selected_var)) # False discovery proportion (FDP)
+TPP <- length(intersect(selected_var, true_actives)) / max(1, length(true_actives)) # True positive proportion (TPP)
+
+selected_var
+selected_dummies
+FDP
+TPP
+```
+
+******
+
+* **T_stop = 5**:
+
+```{r terminated_solution_path_T_10, echo=TRUE, fig.align='center', message=TRUE, fig.width = 10, fig.height = 6, out.width = "90%"}
+# Perform three additional T-LARS steps (going from T_stop = 2 to T_stop = 5) on object "mod_tlars"
+tlars(model = mod_tlars, T_stop = 5, early_stop = TRUE)
+print(mod_tlars)
+plot(mod_tlars)
+
+# Coefficient vector corresponding to original and dummy variables at the terminal T-LARS step 
+beta_hat <- mod_tlars$get_beta()
+
+selected_var <- which(abs(beta_hat[seq(p)]) > eps) # Indices of selected original variables
+selected_dummies <- p + which(abs(beta_hat[seq(p + 1, ncol(XD))]) > eps) # Indices of selected dummy variables
+
+FDP <- length(setdiff(selected_var, true_actives)) / max(1, length(selected_var)) # False discovery proportion (FDP)
+TPP <- length(intersect(selected_var, true_actives)) / max(1, length(true_actives)) # True positive proportion (TPP)
+
+selected_var
+selected_dummies
+FDP
+TPP
+```
+
+******
+
+
+# FDR and TPR
+## False discovery rate (FDR) and true positive rate (TPR)
+From a statistical point of view, it is desirable to use a variable selection method that allows for controlling the expected value of the FDP at a user-defined target level $\alpha \in [0, 1]$ while maximizing the number of selected variables. These type of methods exist and are called false discovery rate (FDR)-controlling methods. For example, the **T-Rex selector** ([Paper](https://arxiv.org/abs/2110.06048) and [R package](https://github.com/jasinmachkour/trex)) is a fast and FDR-controlling variable/feature selection framework for large-scale high-dimensional settings that relies on the T-LARS method.
+
+**Definitions** (FDR and TPR)
+Let $\widehat{\A} \subseteq \lbrace 1, \ldots, p \rbrace$ be the set of selected variables, $\A \subseteq \lbrace 1, \ldots, p \rbrace$ the set of true active variables, $| \widehat{\A} |$ the cardinality of $\widehat{\A}$, and define $1 \lor a \coloneqq \max\lbrace 1, a \rbrace$, $a \in \mathbb{R}$. Then, the false discovery rate (FDR) and the true positive rate (TPR) are defined by
+$$
+\FDR \coloneqq \mathbb{E} \big[ \FDP \big] \coloneqq \mathbb{E} \left[ \dfrac{\big| \widehat{\A} \backslash \A \big|}{1 \lor \big| \widehat{\A} \big|} \right]
+$$
+and 
+
+$$
+\TPR \coloneqq \mathbb{E} \big[ \TPP \big] \coloneqq \mathbb{E} \left[ \dfrac{| \A  \cap \widehat{\A} |}{1 \lor | \A |} \right],
+$$
+respectively.
+
+# Simulations
+We conduct Monte Carlo simulations and plot the resulting averaged FDP and TPP over the number of included dummies T. Note that the averaged FDP and TPP are estimates of the FDR and TPR, respectively.
+
+```{r}
+# Setup
+n <- 100 # number of observations
+p <- 300 # number of variables
+
+# Parameters
+num_act <- 10 # number of true active variables
+beta <- rep(0, times = p) # coefficient vector (all zeros first)
+beta[sample(seq(p), size = num_act, replace = FALSE)] <- 3 # coefficient vector (active variables with non-zero coefficients)
+true_actives <- which(beta > 0) # indices of true active variables
+num_dummies <- p # number of dummies
+T_vec <- c(1, 2, 5, 10, 20, 50, 100) # stopping points, i.e, number of included dummies before terminating the solution path
+MC <- 500 # number of Monte Carlo runs per stopping point
+
+# Initialize results vectors
+FDP <- matrix(NA, nrow = MC, ncol = length(T_vec))
+TPP <- matrix(NA, nrow = MC, ncol = length(T_vec))
+
+# Numerical zero
+eps <- .Machine$double.eps
+
+# Seed
+set.seed(12345)
+
+# Run simulations
+for (t in seq_along(T_vec)) {
+  for (mc in seq(MC)) {
+    # Generate Gaussian data
+    X <- matrix(stats::rnorm(n * p), nrow = n, ncol = p)
+    y <- X %*% beta + stats::rnorm(n)
+
+    # Generate dummy matrix and append it to X
+    dummies <- matrix(stats::rnorm(n * p), nrow = n, ncol = num_dummies)
+    XD <- cbind(X, dummies)
+
+    # Create object of class tlars_cpp
+    mod_tlars <- tlars_model(X = XD, y = y, num_dummies = num_dummies, type = "lar", info = FALSE)
+
+    # Run T-LARS steps
+    tlars(model = mod_tlars, T_stop = t, early_stop = TRUE, info = FALSE)
+    beta_hat <- mod_tlars$get_beta()
+    selected_var <- which(abs(beta_hat[seq(p)]) > eps)
+
+    # Results
+    FDP[mc, t] <- length(setdiff(selected_var, true_actives)) / max(1, length(selected_var))
+    TPP[mc, t] <- length(intersect(selected_var, true_actives)) / max(1, length(true_actives))
+  }
+}
+
+# Compute estimates of FDR and TPR by averaging FDP and TPP over MC Monte Carlo runs
+FDR <- colMeans(FDP)
+TPR <- colMeans(TPP)
+```
+
+```{r FDR_and_TPR, echo=FALSE, fig.align='center', message=FALSE, fig.width = 10, fig.height = 5, out.width = "90%"}
+# Plot results
+library(ggplot2)
+library(patchwork)
+
+plot_data = data.frame(T_vec = T_vec,
+                       FDR = 100 * FDR,
+                       TPR = 100 * TPR) # data frame containing data to be plotted (FDR and TPR in %)
+
+# FDR vs. T
+FDR_vs_T = 
+  ggplot(plot_data, aes(x = T_vec, y = FDR)) +
+    labs(x = "T",
+         y = "FDR") +
+    scale_x_continuous(breaks = T_vec[-2], minor_breaks = c(2), limits = c(T_vec[1], T_vec[length(T_vec)])) +
+    scale_y_continuous(breaks = seq(0, 100, by = 10), minor_breaks = c(), limits = c(0, 100)) +
+    geom_line(size = 1.5, colour = "#336C68") +
+    geom_point(size = 2.5, colour = "#336C68") +
+    theme_bw(base_size = 16) +
+    theme(panel.background = element_rect(fill = "white", color = "black", size = 1)) +
+    coord_fixed(ratio =  0.85 * T_vec[length(T_vec)] / (100 - 0))
+
+# TPR vs. T
+TPR_vs_T = 
+  ggplot(plot_data, aes(x = T_vec, y = TPR)) +
+    labs(x = "T",
+         y = "TPR") +
+    scale_x_continuous(breaks = T_vec[-2], minor_breaks = c(2), limits = c(T_vec[1], T_vec[length(T_vec)])) +
+    scale_y_continuous(breaks = seq(0, 100, by = 10), minor_breaks = c(), limits = c(0, 100)) +
+    geom_line(size = 1.5, colour = "#336C68") +
+    geom_point(size = 2.5, colour = "#336C68") +
+    theme_bw(base_size = 16) +
+    theme(panel.background = element_rect(fill = "white", color = "black", size = 1)) +
+    coord_fixed(ratio =  0.85 * T_vec[length(T_vec)] / (100 - 0))
+
+FDR_vs_T + TPR_vs_T
+
+# TPR vs. FDR
+TPR_vs_FDR = 
+  ggplot(plot_data, aes(x = FDR, y = TPR)) +
+    labs(x = "FDR",
+         y = "TPR") +
+    geom_line(size = 1.5, colour = "#336C68") +
+    geom_point(size = 2.5, colour = "#336C68") +
+    theme_bw(base_size = 16) +
+    theme(panel.background = element_rect(fill = "white", color = "black", size = 1))
+
+TPR_vs_FDR
+```
+
+We observe that with growing number of included dummies $T$ the FDR and TPR increase. Moreover, we see that there seems to be a trade-off between FDR and TPR. For more details and discussions on these observations, we refer the interested reader to [@machkour2021terminating].
+
+# Outlook
+The T-LARS algorithm is a major building block of the T-Rex selector ([Paper](https://arxiv.org/abs/2110.06048) and [R package](https://github.com/jasinmachkour/trex)). The T-Rex selector performs terminated-random experiments (T-Rex) using the T-LARS algorithm and fuses the selected active sets of all random experiments to obtain a final set of selected variables. The T-Rex selector provably controls the FDR at the user-defined target level while maximizing the number of selected variables. If you are working in genomics, financial engineering, or any other field that requires a fast and FDR-controlling variable/feature selection method for large-scale high-dimensional settings, then this is for you. Check it out!
+
+# References {-}
+<!-- <div class="tocify-extend-page" data-unique="tocify-extend-page" style="height: 0px;"></div> -->
+
+```{r, include = FALSE}
+# Reset user's options()
+options(old_options)
+```
