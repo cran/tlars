@@ -1,4 +1,4 @@
-## ---- include = FALSE---------------------------------------------------------
+## ----include = FALSE----------------------------------------------------------
 # Store user's options()
 old_options <- options()
 
@@ -14,7 +14,7 @@ knitr::opts_chunk$set(
 )
 options(width = 80)
 
-## ---- eval=FALSE--------------------------------------------------------------
+## ----eval=FALSE---------------------------------------------------------------
 #  library(tlars)
 #  help(package = "tlars")
 #  ?tlars
@@ -24,7 +24,7 @@ options(width = 80)
 #  ?print.Rcpp_tlars_cpp
 #  ?Gauss_data
 
-## ---- eval=FALSE--------------------------------------------------------------
+## ----eval=FALSE---------------------------------------------------------------
 #  citation("tlars")
 
 ## -----------------------------------------------------------------------------
@@ -168,10 +168,10 @@ FDR_vs_T =
          y = "FDR") +
     scale_x_continuous(breaks = T_vec[-2], minor_breaks = c(2), limits = c(T_vec[1], T_vec[length(T_vec)])) +
     scale_y_continuous(breaks = seq(0, 100, by = 10), minor_breaks = c(), limits = c(0, 100)) +
-    geom_line(size = 1.5, colour = "#336C68") +
+    geom_line(linewidth = 1.5, colour = "#336C68") +
     geom_point(size = 2.5, colour = "#336C68") +
     theme_bw(base_size = 16) +
-    theme(panel.background = element_rect(fill = "white", color = "black", size = 1)) +
+    theme(panel.background = element_rect(fill = "white", color = "black", linewidth = 1)) +
     coord_fixed(ratio =  0.85 * T_vec[length(T_vec)] / (100 - 0))
 
 # TPR vs. T
@@ -181,10 +181,10 @@ TPR_vs_T =
          y = "TPR") +
     scale_x_continuous(breaks = T_vec[-2], minor_breaks = c(2), limits = c(T_vec[1], T_vec[length(T_vec)])) +
     scale_y_continuous(breaks = seq(0, 100, by = 10), minor_breaks = c(), limits = c(0, 100)) +
-    geom_line(size = 1.5, colour = "#336C68") +
+    geom_line(linewidth = 1.5, colour = "#336C68") +
     geom_point(size = 2.5, colour = "#336C68") +
     theme_bw(base_size = 16) +
-    theme(panel.background = element_rect(fill = "white", color = "black", size = 1)) +
+    theme(panel.background = element_rect(fill = "white", color = "black", linewidth = 1)) +
     coord_fixed(ratio =  0.85 * T_vec[length(T_vec)] / (100 - 0))
 
 FDR_vs_T + TPR_vs_T
@@ -194,14 +194,14 @@ TPR_vs_FDR =
   ggplot(plot_data, aes(x = FDR, y = TPR)) +
     labs(x = "FDR",
          y = "TPR") +
-    geom_line(size = 1.5, colour = "#336C68") +
+    geom_line(linewidth = 1.5, colour = "#336C68") +
     geom_point(size = 2.5, colour = "#336C68") +
     theme_bw(base_size = 16) +
-    theme(panel.background = element_rect(fill = "white", color = "black", size = 1))
+    theme(panel.background = element_rect(fill = "white", color = "black", linewidth = 1))
 
 TPR_vs_FDR
 
-## ---- include = FALSE---------------------------------------------------------
+## ----include = FALSE----------------------------------------------------------
 # Reset user's options()
 options(old_options)
 
